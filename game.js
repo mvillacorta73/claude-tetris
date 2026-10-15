@@ -53,6 +53,22 @@ const CHALLENGES = [
   { name: 'Rotación inversa', desc: 'Limpia 25 líneas (rotación invertida desde nivel 7)', lines: 25, startLevel: 6, reverseAt: 7 },
 ];
 
+// Habilidades cargables: la barra se llena al limpiar líneas
+const ENERGY_MAX = 100;
+const ENERGY_PER_LINE = [0, 20, 45, 70, 100]; // por nº de líneas de un mismo clear
+const PREVIEW_MS = 30000;
+const SLOW_MS = 10000;
+const SLOW_FACTOR = 0.4;
+const QUEUE_SIZE = 5;
+const ABILITIES = [
+  { icon: '👁️', name: 'Ver siguientes 5 piezas' },
+  { icon: '🔄', name: 'Intercambiar pieza actual' },
+  { icon: '🐢', name: 'Ralentizar tiempo 10s' },
+  { icon: '↩️', name: 'Deshacer última colocación' },
+  { icon: '📦', name: 'Reservar pieza (hold)' },
+];
+const PIECE_NAMES = ['', 'I', 'O', 'T', 'S', 'Z', 'J', 'L', 'Tuerca'];
+
 const LINE_SCORES = [0, 100, 300, 500, 800];
 
 const canvas = document.getElementById('board');
@@ -68,13 +84,24 @@ const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
 const themeBtn = document.getElementById('theme-toggle');
 const modeSel = document.getElementById('mode');
+const previewCanvas = document.getElementById('preview-canvas');
+const previewCtx = previewCanvas.getContext('2d');
+const holdCanvas = document.getElementById('hold-canvas');
+const holdCtx = holdCanvas.getContext('2d');
+const energyEl = document.getElementById('energy');
+const energyFill = document.getElementById('energy-fill');
+const abilityEl = document.getElementById('ability-menu');
+const abilityTitle = document.getElementById('ability-title');
+const abilityList = document.getElementById('ability-list');
+const abilityHint = document.getElementById('ability-hint');
 CHALLENGES.forEach((ch, i) => modeSel.add(new Option(`Desafío ${i + 1}: ${ch.name}`, String(i))));
 
 let theme = 'dark';
 let gridColor = '#22222e';
 
-let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+let board, current, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
 let challenge, elapsed, garbageAccum, hid;
+let energy, queue, previewLeft, slowLeft, undoSnap, held, abilityMenu;
 let pendingSpecial, nextSpecialAt, freezeLeft;
 let combo, b2b, lastMoveRotate, popups, shake, flash;
 let muted = false;
@@ -204,6 +231,7 @@ function prefillBoard(rows) {
 
 function addGarbage() {
   const overflow = board[0].some(v => v !== 0);
+  undoSnap = null; // el tablero cambió: no se puede deshacer
   board.shift(); hid.shift();
   board.push(garbageRow());
   hid.push(new Array(COLS).fill(false));
@@ -285,10 +313,24 @@ function applySpecial() {
   updateHUD();
 }
 
-function randomPiece() {
-  const type = Math.floor(Math.random() * (PIECES.length - 1)) + 1;
+function makePiece(type) {
   const shape = PIECES[type].map(row => [...row]);
   return { type, shape, x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2), y: 0 };
+}
+
+function randomPiece() {
+  return makePiece(Math.floor(Math.random() * (PIECES.length - 1)) + 1);
+}
+
+// Tipos >= 10 son especiales (1×1); el resto sale de PIECES
+function pieceOfType(type) {
+  return type >= SPECIAL.BOMB
+    ? { type, shape: [[type]], x: Math.floor(COLS / 2), y: 0, special: true }
+    : makePiece(type);
+}
+
+function clonePiece(p) {
+  return { ...p, shape: p.shape.map(row => [...row]) };
 }
 
 function collide(shape, ox, oy) {
@@ -392,19 +434,27 @@ function softDrop() {
 }
 
 function lockPiece() {
+  undoSnap = {
+    board: board.map(row => [...row]),
+    hid: hid.map(row => [...row]),
+    score, lines, level, dropInterval, combo, b2b, nextSpecialAt, pendingSpecial,
+    piece: clonePiece(current),
+    queue: queue.map(clonePiece),
+  };
   const tspin = !current.special && isTSpin();
   if (current.special) applySpecial();
   else merge();
   const cleared = clearLines();
   scoreClear(cleared, tspin);
+  if (cleared) addEnergy(ENERGY_PER_LINE[Math.min(cleared, 4)]);
   lastMoveRotate = false;
   if (challenge?.lines && lines >= challenge.lines) { winChallenge(); return; }
   spawn();
 }
 
 function spawn() {
-  current = next;
-  next = pendingSpecial ? randomSpecial() : randomPiece();
+  current = queue.shift();
+  queue.push(pendingSpecial ? randomSpecial() : randomPiece());
   pendingSpecial = false;
   if (collide(current.shape, current.x, current.y)) {
     endGame();
@@ -416,6 +466,8 @@ function updateHUD() {
   scoreEl.textContent = score.toLocaleString();
   linesEl.textContent = lines;
   levelEl.textContent = level;
+  energyFill.style.width = `${energy}%`;
+  energyEl.classList.toggle('full', energy >= ENERGY_MAX);
 }
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
@@ -496,6 +548,13 @@ function draw() {
     ctx.font = 'bold 18px sans-serif';
     ctx.fillText(`❄ ${(freezeLeft / 1000).toFixed(1)}s`, canvas.width / 2, 18);
   }
+  if (slowLeft > 0) {
+    ctx.fillStyle = 'rgba(149,117,205,0.15)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#b39ddb';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.fillText(`🐢 ${(slowLeft / 1000).toFixed(1)}s`, canvas.width / 2, freezeLeft > 0 ? 42 : 18);
+  }
   if (flash > 0) {
     ctx.fillStyle = `rgba(255,255,255,${0.5 * Math.min(1, flash / 250)})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -518,12 +577,163 @@ function draw() {
 function drawNext() {
   const NB = 30;
   nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
-  const shape = next.shape;
-  const offX = Math.floor((4 - shape[0].length) / 2);
+  drawShapeIn(nextCtx, queue[0].shape, 0, NB);
+  drawPreview();
+}
+
+// Dibuja una forma centrada en la celda de 4×4 número `slot` de un canvas horizontal
+function drawShapeIn(context, shape, slot, size) {
+  const offX = slot * 4 + Math.floor((4 - shape[0].length) / 2);
   const offY = Math.floor((4 - shape.length) / 2);
   for (let r = 0; r < shape.length; r++)
     for (let c = 0; c < shape[r].length; c++)
-      drawBlock(nextCtx, offX + c, offY + r, shape[r][c], NB);
+      drawBlock(context, offX + c, offY + r, shape[r][c], size);
+}
+
+function drawPreview() {
+  previewCanvas.classList.toggle('hidden', previewLeft <= 0);
+  previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+  if (previewLeft <= 0) return;
+  queue.slice(0, QUEUE_SIZE).forEach((p, i) => drawShapeIn(previewCtx, p.shape, i, 8));
+}
+
+function drawHold() {
+  holdCtx.clearRect(0, 0, holdCanvas.width, holdCanvas.height);
+  if (held !== null) drawShapeIn(holdCtx, pieceOfType(held).shape, 0, 30);
+}
+
+// ---- Habilidades ----
+function addEnergy(n) {
+  const wasFull = energy >= ENERGY_MAX;
+  energy = Math.min(ENERGY_MAX, energy + n);
+  if (!wasFull && energy >= ENERGY_MAX) showPopup('¡ENERGÍA LLENA! (E)', '#69f0ae');
+  updateHUD();
+}
+
+function setHint(text) {
+  abilityHint.textContent = text;
+}
+
+function renderAbilityMenu() {
+  abilityList.replaceChildren();
+  const swap = abilityMenu === 'swap';
+  abilityTitle.textContent = swap ? 'ELEGIR PIEZA' : 'HABILIDAD';
+  setHint(swap ? 'Teclas 1–8 · Esc volver' : 'Teclas 1–5 · Esc cancelar');
+  const items = swap
+    ? PIECE_NAMES.slice(1).map(name => ({ name }))
+    : ABILITIES.map((a, i) => ({ ...a, disabled: i === 3 && !undoSnap }));
+  items.forEach((it, i) => {
+    const li = document.createElement('li');
+    li.textContent = `${i + 1}. ${it.icon ? it.icon + ' ' : ''}${it.name}`;
+    if (it.disabled) li.classList.add('disabled');
+    li.addEventListener('click', () => chooseAbility(i));
+    abilityList.appendChild(li);
+  });
+}
+
+function openAbilityMenu() {
+  abilityMenu = 'main';
+  cancelAnimationFrame(animId);
+  renderAbilityMenu();
+  abilityEl.classList.remove('hidden');
+}
+
+function closeAbilityMenu() {
+  abilityMenu = null;
+  abilityEl.classList.add('hidden');
+  lastTime = performance.now();
+  loop(lastTime);
+}
+
+function finishAbility(label) {
+  energy = 0;
+  updateHUD();
+  showPopup(label, '#69f0ae');
+  tone(523, 0.1, 'triangle');
+  tone(784, 0.15, 'triangle', 0.08);
+  closeAbilityMenu();
+}
+
+function chooseAbility(i) {
+  if (abilityMenu === 'main' && i < ABILITIES.length) useAbility(i);
+  else if (abilityMenu === 'swap' && i < PIECE_NAMES.length - 1) {
+    if (swapPiece(i + 1)) finishAbility('INTERCAMBIO');
+    else setHint('No cabe esa pieza aquí');
+  }
+}
+
+function useAbility(i) {
+  switch (i) {
+    case 0:
+      previewLeft = PREVIEW_MS;
+      drawPreview();
+      break;
+    case 1:
+      abilityMenu = 'swap';
+      renderAbilityMenu();
+      return;
+    case 2:
+      slowLeft = SLOW_MS;
+      break;
+    case 3:
+      if (!undoPlacement()) { setHint('Nada que deshacer'); return; }
+      break;
+    case 4:
+      holdPiece();
+      break;
+  }
+  finishAbility(ABILITIES[i].name.toUpperCase());
+}
+
+function swapPiece(type) {
+  const p = makePiece(type);
+  for (const kick of [0, -1, 1, -2, 2]) {
+    if (!collide(p.shape, current.x + kick, current.y)) {
+      p.x = current.x + kick;
+      p.y = current.y;
+      current = p;
+      lastMoveRotate = false;
+      return true;
+    }
+  }
+  if (collide(p.shape, p.x, 0)) return false;
+  current = p;
+  lastMoveRotate = false;
+  return true;
+}
+
+function undoPlacement() {
+  const s = undoSnap;
+  if (!s) return false;
+  board = s.board;
+  hid = s.hid;
+  score = s.score; lines = s.lines; level = s.level; dropInterval = s.dropInterval;
+  b2b = s.b2b; nextSpecialAt = s.nextSpecialAt; pendingSpecial = s.pendingSpecial;
+  setCombo(s.combo);
+  queue = s.queue;
+  current = pieceOfType(s.piece.type); // vuelve a la posición de spawn
+  dropAccum = 0;
+  lastMoveRotate = false;
+  undoSnap = null;
+  drawNext();
+  updateHUD();
+  updateObjective();
+  return true;
+}
+
+function holdPiece() {
+  const type = current.type;
+  undoSnap = null; // la cola cambia: deshacer duplicaría piezas
+  if (held === null) {
+    held = type;
+    spawn();
+  } else {
+    current = pieceOfType(held);
+    held = type;
+    if (collide(current.shape, current.x, current.y)) endGame();
+  }
+  lastMoveRotate = false;
+  drawHold();
 }
 
 function endGame() {
@@ -536,7 +746,7 @@ function endGame() {
 }
 
 function togglePause() {
-  if (gameOver) return;
+  if (gameOver || abilityMenu) return;
   paused = !paused;
   if (!paused) {
     lastTime = performance.now();
@@ -572,7 +782,12 @@ function loop(ts) {
   if (shake > 0) shake -= dt;
   if (flash > 0) flash -= dt;
   if (freezeLeft > 0) freezeLeft = Math.max(0, freezeLeft - dt);
-  else dropAccum += dt; // congelado: la gravedad no avanza
+  else dropAccum += dt * (slowLeft > 0 ? SLOW_FACTOR : 1); // congelado: la gravedad no avanza
+  if (slowLeft > 0) slowLeft = Math.max(0, slowLeft - dt);
+  if (previewLeft > 0) {
+    previewLeft = Math.max(0, previewLeft - dt);
+    if (previewLeft === 0) drawPreview();
+  }
   if (dropAccum >= dropInterval) {
     dropAccum = 0;
     if (!collide(current.shape, current.x, current.y + 1)) {
@@ -596,7 +811,7 @@ function applyTheme(name) {
   themeBtn.setAttribute('aria-pressed', String(light));
   themeBtn.setAttribute('aria-label', light ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro');
   // En pausa o game over el loop está cancelado: repintar manualmente
-  if (current) { draw(); drawNext(); }
+  if (current) { draw(); drawNext(); drawHold(); }
 }
 
 function init() {
@@ -624,8 +839,16 @@ function init() {
   flash = 0;
   setCombo(0);
   lastTime = performance.now();
-  next = randomPiece();
+  energy = 0;
+  previewLeft = 0;
+  slowLeft = 0;
+  undoSnap = null;
+  held = null;
+  abilityMenu = null;
+  abilityEl.classList.add('hidden');
+  queue = Array.from({ length: QUEUE_SIZE + 1 }, randomPiece); // +1: spawn() consume la primera
   spawn();
+  drawHold();
   updateHUD();
   updateObjective();
   overlay.classList.add('hidden');
@@ -637,7 +860,21 @@ document.addEventListener('keydown', e => {
   ensureAudio();
   if (e.code === 'KeyM') { muted = !muted; return; }
   if (e.code === 'KeyP') { togglePause(); return; }
+  if (abilityMenu) {
+    if (e.code === 'Escape') {
+      if (abilityMenu === 'swap') { abilityMenu = 'main'; renderAbilityMenu(); }
+      else closeAbilityMenu();
+    } else {
+      const m = /^Digit([1-9])$/.exec(e.code);
+      if (m) chooseAbility(Number(m[1]) - 1);
+    }
+    return;
+  }
   if (paused || gameOver) return;
+  if (e.code === 'KeyE') {
+    if (energy >= ENERGY_MAX) openAbilityMenu();
+    return;
+  }
   switch (e.code) {
     case 'ArrowLeft':
       if (!collide(current.shape, current.x - 1, current.y)) { current.x--; lastMoveRotate = false; }

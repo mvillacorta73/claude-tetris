@@ -37,6 +37,11 @@
         </div>
 
         <div class="panel-section">
+          <span class="label">ENERGÍA</span>
+          <div class="energy-bar" id="energy"><div id="energy-fill"></div><span class="energy-text">¡PULSA E!</span></div>
+        </div>
+
+        <div class="panel-section">
           <span class="label">OBJETIVO</span>
           <span class="objective" id="objective">Modo clásico</span>
         </div>
@@ -44,6 +49,12 @@
         <div class="panel-section">
           <span class="label">NEXT</span>
           <canvas id="next-canvas" width="120" height="120"></canvas>
+          <canvas id="preview-canvas" class="hidden" width="160" height="32"></canvas>
+        </div>
+
+        <div class="panel-section">
+          <span class="label">HOLD</span>
+          <canvas id="hold-canvas" width="120" height="120"></canvas>
         </div>
 
         <div class="panel-section controls">
@@ -53,6 +64,7 @@
             <li><kbd>↑</kbd> rotar</li>
             <li><kbd>↓</kbd> bajar</li>
             <li><kbd>Space</kbd> caída</li>
+            <li><kbd>E</kbd> habilidad</li>
             <li><kbd>P</kbd> pausa</li>
             <li><kbd>M</kbd> silenciar</li>
           </ul>
@@ -69,6 +81,14 @@
           </ul>
         </div>
       </aside>
+    </div>
+
+    <div id="ability-menu" class="overlay hidden">
+      <div class="overlay-box">
+        <p id="ability-title">HABILIDAD</p>
+        <ul id="ability-list" class="ability-list"></ul>
+        <p id="ability-hint" class="ability-hint"></p>
+      </div>
     </div>
 
     <div id="overlay" class="overlay hidden">
