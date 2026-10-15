@@ -39,6 +39,10 @@ const overlay = document.getElementById('overlay');
 const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
+const themeBtn = document.getElementById('theme-toggle');
+
+let theme = 'dark';
+let gridColor = '#22222e';
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
 
@@ -169,7 +173,7 @@ function drawBlock(context, x, y, colorIndex, size, alpha) {
 }
 
 function drawGrid() {
-  ctx.strokeStyle = '#22222e';
+  ctx.strokeStyle = gridColor;
   ctx.lineWidth = 0.5;
   for (let c = 1; c < COLS; c++) {
     ctx.beginPath();
@@ -256,6 +260,18 @@ function loop(ts) {
   animId = requestAnimationFrame(loop);
 }
 
+function applyTheme(name) {
+  theme = name;
+  document.documentElement.dataset.theme = theme;
+  gridColor = getComputedStyle(document.documentElement).getPropertyValue('--grid').trim();
+  const light = theme === 'light';
+  themeBtn.textContent = light ? '🌙 Modo oscuro' : '☀️ Modo claro';
+  themeBtn.setAttribute('aria-pressed', String(light));
+  themeBtn.setAttribute('aria-label', light ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro');
+  // En pausa o game over el loop está cancelado: repintar manualmente
+  if (current) { draw(); drawNext(); }
+}
+
 function init() {
   board = createBoard();
   score = 0;
@@ -300,5 +316,10 @@ document.addEventListener('keydown', e => {
 });
 
 restartBtn.addEventListener('click', init);
+themeBtn.addEventListener('click', () => {
+  applyTheme(theme === 'dark' ? 'light' : 'dark');
+  themeBtn.blur(); // evita que Espacio vuelva a activar el botón
+});
 
+applyTheme('dark');
 init();
