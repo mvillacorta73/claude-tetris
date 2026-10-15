@@ -350,3 +350,11 @@ kbd {
 }
 .rec-save:hover, .rec-reset:hover { border-color: var(--accent); }
 .rec-reset { color: var(--danger); }
+/* ---- Menú de pausa ---- */
+.pause-box { display: flex; flex-direction: column; gap: 10px; min-width: 220px; }
+.pause-box button, .pause-box select { width: 100%; }
+.pause-box .hidden { display: none; }
+.pause-controls { list-style: none; margin: 0; padding: 0; text-align: left; font-size: 13px; }
+.pause-controls li { margin: 4px 0; }
+.pause-level { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 14px; }
+.pause-level select { width: auto; }
