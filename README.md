@@ -37,6 +37,7 @@ Es una versión jugable del Tetris clásico con todas las mecánicas que esperar
 - Las **7 piezas estándar** (I, O, T, S, Z, J, L) con colores diferenciados.
 - Una **pieza reto**, la **Tuerca**: un anillo de 3 × 3 con la celda central vacía, más difícil de encajar.
 - **Piezas especiales** (bloque 1×1) que aparecen cada 5 líneas y disparan su efecto al caer: 💣 **Bomba** (destruye un área 3×3), ⚡ **Rayo** (limpia la fila y la columna), 🎨 **Tinte** (convierte todos los bloques de un color en comodines arcoíris que dan puntos extra al limpiar su línea), 🌀 **Gravedad** (compacta los huecos del tablero) y ❄️ **Congelar** (pausa la caída 5 s).
+- **Combos y bonus**: limpiar líneas en piezas consecutivas multiplica la puntuación (x2, x3… hasta x10); **T-spin** (rotar una T en un hueco con 3 esquinas ocupadas), **Back-to-Back** (Tetris/T-spin seguidos, ×1.5) y **Perfect Clear** (tablero vacío, +3000 × nivel). Incluye popups, sacudida, destello y sonidos generados con Web Audio (tecla <kbd>M</kbd> para silenciar).
 - **Rotación** con _wall kicks_ básicos (pequeños desplazamientos para que la pieza pueda rotar pegada a la pared).
 - **Soft drop** (bajada acelerada) y **hard drop** (caída instantánea).
 - **Pieza fantasma** (_ghost piece_): muestra dónde aterrizará la pieza actual.

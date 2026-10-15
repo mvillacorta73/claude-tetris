@@ -226,3 +226,9 @@ kbd {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+#combo.pulse { animation: combo-pulse 0.35s ease-out; }
+@keyframes combo-pulse {
+  0% { transform: scale(1.8); color: #ffd54f; }
+  100% { transform: scale(1); }
+}
