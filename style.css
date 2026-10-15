@@ -313,3 +313,56 @@ html[data-skin] #preview-canvas {
   background: var(--skin-bg, var(--surface));
 }
 .mode-bar label + select + label { margin-left: 12px; }
+/* ---- Records ---- */
+#start-screen { z-index: 2; }
+#start-title {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 8px;
+  color: var(--accent);
+}
+#start-btn {
+  background: var(--accent);
+  color: var(--btn-text);
+  border: none;
+  border-radius: 6px;
+  padding: 10px 28px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 1px;
+}
+#start-btn:hover { background: var(--accent-hover); }
+#start-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.records { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.records.hidden { display: none; }
+.rec-title { font-size: 12px; letter-spacing: 3px; font-weight: 700; color: var(--label); }
+.rec-table { border-collapse: collapse; font-size: 13px; min-width: 240px; }
+.rec-table th { font-size: 10px; letter-spacing: 1px; color: var(--label); text-align: left; padding: 2px 8px; }
+.rec-table td { padding: 3px 8px; color: var(--text); text-align: left; font-family: 'Courier New', Courier, monospace; }
+.rec-table tr.rec-hl td { background: var(--accent); color: var(--btn-text); font-weight: 700; }
+.rec-stats { font-size: 12px; color: var(--muted); }
+.rec-prompt { font-size: 13px; color: var(--accent); font-weight: 700; }
+.rec-form { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; align-items: center; max-width: 280px; }
+.rec-form .rec-prompt { flex-basis: 100%; }
+.rec-form input {
+  font: inherit; font-size: 14px; padding: 6px 8px; width: 140px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; user-select: text;
+}
+.rec-form input:focus { outline: 2px solid var(--accent); border-color: var(--accent); }
+.rec-save, .rec-reset {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.rec-save:hover, .rec-reset:hover { border-color: var(--accent); }
+.rec-reset { color: var(--danger); }
+/* ---- Menú de pausa ---- */
+.pause-box { display: flex; flex-direction: column; gap: 10px; min-width: 220px; }
+.pause-box button, .pause-box select { width: 100%; }
+.pause-box .hidden { display: none; }
+.pause-controls { list-style: none; margin: 0; padding: 0; text-align: left; font-size: 13px; }
+.pause-controls li { margin: 4px 0; }
+.pause-level { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 14px; }
+.pause-level select { width: auto; }
