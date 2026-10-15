@@ -65,7 +65,6 @@ const ABILITIES = [
   { icon: '🔄', name: 'Intercambiar pieza actual' },
   { icon: '🐢', name: 'Ralentizar tiempo 10s' },
   { icon: '↩️', name: 'Deshacer última colocación' },
-  { icon: '📦', name: 'Reservar pieza (hold)' },
 ];
 const PIECE_NAMES = ['', 'I', 'O', 'T', 'S', 'Z', 'J', 'L', 'Tuerca'];
 
@@ -101,7 +100,7 @@ let gridColor = '#22222e';
 
 let board, current, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
 let challenge, elapsed, garbageAccum, hid;
-let energy, queue, previewLeft, slowLeft, undoSnap, held, abilityMenu;
+let energy, queue, previewLeft, slowLeft, undoSnap, held, holdUsed, abilityMenu;
 let pendingSpecial, nextSpecialAt, freezeLeft;
 let combo, b2b, lastMoveRotate, popups, shake, flash;
 let muted = false;
@@ -437,7 +436,7 @@ function lockPiece() {
   undoSnap = {
     board: board.map(row => [...row]),
     hid: hid.map(row => [...row]),
-    score, lines, level, dropInterval, combo, b2b, nextSpecialAt, pendingSpecial,
+    score, lines, level, dropInterval, combo, b2b, nextSpecialAt, pendingSpecial, holdUsed,
     piece: clonePiece(current),
     queue: queue.map(clonePiece),
   };
@@ -449,7 +448,9 @@ function lockPiece() {
   if (cleared) addEnergy(ENERGY_PER_LINE[Math.min(cleared, 4)]);
   lastMoveRotate = false;
   if (challenge?.lines && lines >= challenge.lines) { winChallenge(); return; }
+  holdUsed = false;
   spawn();
+  drawHold();
 }
 
 function spawn() {
@@ -598,6 +599,7 @@ function drawPreview() {
 }
 
 function drawHold() {
+  holdCanvas.classList.toggle('locked', !!holdUsed);
   holdCtx.clearRect(0, 0, holdCanvas.width, holdCanvas.height);
   if (held !== null) drawShapeIn(holdCtx, pieceOfType(held).shape, 0, 30);
 }
@@ -618,7 +620,7 @@ function renderAbilityMenu() {
   abilityList.replaceChildren();
   const swap = abilityMenu === 'swap';
   abilityTitle.textContent = swap ? 'ELEGIR PIEZA' : 'HABILIDAD';
-  setHint(swap ? 'Teclas 1–8 · Esc volver' : 'Teclas 1–5 · Esc cancelar');
+  setHint(swap ? 'Teclas 1–8 · Esc volver' : `Teclas 1–${ABILITIES.length} · Esc cancelar`);
   const items = swap
     ? PIECE_NAMES.slice(1).map(name => ({ name }))
     : ABILITIES.map((a, i) => ({ ...a, disabled: i === 3 && !undoSnap }));
@@ -678,9 +680,6 @@ function useAbility(i) {
     case 3:
       if (!undoPlacement()) { setHint('Nada que deshacer'); return; }
       break;
-    case 4:
-      holdPiece();
-      break;
   }
   finishAbility(ABILITIES[i].name.toUpperCase());
 }
@@ -709,6 +708,7 @@ function undoPlacement() {
   hid = s.hid;
   score = s.score; lines = s.lines; level = s.level; dropInterval = s.dropInterval;
   b2b = s.b2b; nextSpecialAt = s.nextSpecialAt; pendingSpecial = s.pendingSpecial;
+  holdUsed = s.holdUsed;
   setCombo(s.combo);
   queue = s.queue;
   current = pieceOfType(s.piece.type); // vuelve a la posición de spawn
@@ -716,12 +716,14 @@ function undoPlacement() {
   lastMoveRotate = false;
   undoSnap = null;
   drawNext();
+  drawHold();
   updateHUD();
   updateObjective();
   return true;
 }
 
 function holdPiece() {
+  if (holdUsed) { tone(120, 0.08); return; } // ya usado en esta pieza
   const type = current.type;
   undoSnap = null; // la cola cambia: deshacer duplicaría piezas
   if (held === null) {
@@ -732,7 +734,9 @@ function holdPiece() {
     held = type;
     if (collide(current.shape, current.x, current.y)) endGame();
   }
+  holdUsed = true; // se libera en lockPiece(), no en spawn() (que holdPiece también llama)
   lastMoveRotate = false;
+  tone(330, 0.08, 'triangle');
   drawHold();
 }
 
@@ -844,6 +848,7 @@ function init() {
   slowLeft = 0;
   undoSnap = null;
   held = null;
+  holdUsed = false;
   abilityMenu = null;
   abilityEl.classList.add('hidden');
   queue = Array.from({ length: QUEUE_SIZE + 1 }, randomPiece); // +1: spawn() consume la primera
@@ -892,6 +897,11 @@ document.addEventListener('keydown', e => {
     case 'Space':
       e.preventDefault();
       hardDrop();
+      break;
+    case 'KeyC':
+    case 'ShiftLeft':
+    case 'ShiftRight':
+      if (!e.repeat) holdPiece();
       break;
   }
   updateHUD();

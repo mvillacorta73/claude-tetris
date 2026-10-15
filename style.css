@@ -245,6 +245,8 @@ kbd {
   border-radius: 4px;
 }
 #preview-canvas.hidden { display: none; }
+#hold-canvas { transition: opacity 0.2s; }
+#hold-canvas.locked { opacity: 0.35; }
 
 .energy-bar {
   position: relative;
