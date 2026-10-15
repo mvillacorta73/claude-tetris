@@ -304,3 +304,12 @@ kbd {
 .ability-list li:hover { border-color: var(--accent); }
 .ability-list li.disabled { opacity: 0.4; cursor: not-allowed; }
 .ability-hint { font-size: 12px; color: var(--muted); }
+
+/* ---- Skins: fondo de los canvas (Neón fuerza negro en ambos temas) ---- */
+html[data-skin] #board,
+html[data-skin] #next-canvas,
+html[data-skin] #hold-canvas,
+html[data-skin] #preview-canvas {
+  background: var(--skin-bg, var(--surface));
+}
+.mode-bar label + select + label { margin-left: 12px; }
