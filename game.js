@@ -44,6 +44,15 @@ const PIECES = [
   [[8,8,8],[8,0,8],[8,8,8]],                  // N (tuerca)
 ];
 
+// Modo desafío: cada nivel tiene un objetivo (lines / surviveMs) y reglas propias
+const CHALLENGES = [
+  { name: '40 líneas en 2:00', desc: 'Limpia 40 líneas en 2:00', lines: 40, timeLimit: 120000 },
+  { name: 'Supervivencia', desc: 'Sobrevive 1:30 (basura cada 10s)', surviveMs: 90000, garbageEvery: 10000 },
+  { name: 'Bloques fijos', desc: 'Limpia 15 líneas', lines: 15, prefill: 8 },
+  { name: 'Piezas invisibles', desc: 'Limpia 8 líneas', lines: 8, hideOnLand: true },
+  { name: 'Rotación inversa', desc: 'Limpia 25 líneas (rotación invertida desde nivel 7)', lines: 25, startLevel: 6, reverseAt: 7 },
+];
+
 const LINE_SCORES = [0, 100, 300, 500, 800];
 
 const canvas = document.getElementById('board');
@@ -58,11 +67,14 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlayScore = document.getElementById('overlay-score');
 const restartBtn = document.getElementById('restart-btn');
 const themeBtn = document.getElementById('theme-toggle');
+const modeSel = document.getElementById('mode');
+CHALLENGES.forEach((ch, i) => modeSel.add(new Option(`Desafío ${i + 1}: ${ch.name}`, String(i))));
 
 let theme = 'dark';
 let gridColor = '#22222e';
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+let challenge, elapsed, garbageAccum, hid;
 let pendingSpecial, nextSpecialAt, freezeLeft;
 let combo, b2b, lastMoveRotate, popups, shake, flash;
 let muted = false;
@@ -177,6 +189,52 @@ function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
 }
 
+function garbageRow() {
+  const row = new Array(COLS).fill(8);
+  row[Math.floor(Math.random() * COLS)] = 0;
+  return row;
+}
+
+function prefillBoard(rows) {
+  for (let r = ROWS - rows; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) board[r][c] = Math.random() < 0.7 ? 1 + Math.floor(Math.random() * 7) : 0;
+    board[r][Math.floor(Math.random() * COLS)] = 0; // nunca una línea completa
+  }
+}
+
+function addGarbage() {
+  const overflow = board[0].some(v => v !== 0);
+  board.shift(); hid.shift();
+  board.push(garbageRow());
+  hid.push(new Array(COLS).fill(false));
+  showPopup('¡BASURA!', '#e57373');
+  tone(150, 0.2, 'sawtooth');
+  if (overflow) { endGame(); return; }
+  while (current.y >= 0 && collide(current.shape, current.x, current.y)) current.y--;
+  if (current.y < 0) endGame();
+}
+
+function winChallenge() {
+  gameOver = true;
+  cancelAnimationFrame(animId);
+  overlayTitle.textContent = '¡DESAFÍO SUPERADO!';
+  overlayScore.textContent = `Puntuación: ${score.toLocaleString()}`;
+  overlay.classList.remove('hidden');
+  [1, 1.25, 1.5, 2].forEach((m, i) => tone(523 * m, 0.2, 'triangle', i * 0.1, 0.08));
+}
+
+function updateObjective() {
+  const el = document.getElementById('objective');
+  if (!challenge) { el.textContent = 'Modo clásico'; return; }
+  const fmt = ms => { const t = Math.ceil(Math.max(0, ms) / 1000); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+  let txt = challenge.desc;
+  if (challenge.lines) txt += `\n${Math.min(lines, challenge.lines)}/${challenge.lines} líneas`;
+  if (challenge.timeLimit) txt += ` · ⏱ ${fmt(challenge.timeLimit - elapsed)}`;
+  if (challenge.surviveMs) txt += `\n⏱ ${fmt(challenge.surviveMs - elapsed)}`;
+  if (challenge.reverseAt && level >= challenge.reverseAt) txt += '\n🔄 ROTACIÓN INVERSA';
+  el.textContent = txt;
+}
+
 function randomSpecial() {
   const type = SPECIAL.BOMB + Math.floor(Math.random() * 5);
   return { type, shape: [[type]], x: Math.floor(COLS / 2), y: 0, special: true };
@@ -255,8 +313,13 @@ function rotateCW(shape) {
   return result;
 }
 
+function rotateCCW(shape) {
+  return rotateCW(rotateCW(rotateCW(shape)));
+}
+
 function tryRotate() {
-  const rotated = rotateCW(current.shape);
+  const reverse = challenge && challenge.reverseAt && level >= challenge.reverseAt;
+  const rotated = reverse ? rotateCCW(current.shape) : rotateCW(current.shape);
   const kicks = [0, -1, 1, -2, 2];
   for (const kick of kicks) {
     if (!collide(rotated, current.x + kick, current.y)) {
@@ -271,8 +334,10 @@ function tryRotate() {
 function merge() {
   for (let r = 0; r < current.shape.length; r++)
     for (let c = 0; c < current.shape[r].length; c++)
-      if (current.shape[r][c])
+      if (current.shape[r][c]) {
         board[current.y + r][current.x + c] = current.shape[r][c];
+        hid[current.y + r][current.x + c] = !!(challenge && challenge.hideOnLand);
+      }
 }
 
 function clearLines() {
@@ -283,6 +348,8 @@ function clearLines() {
       score += wilds * WILD_BONUS * level;
       board.splice(r, 1);
       board.unshift(new Array(COLS).fill(0));
+      hid.splice(r, 1);
+      hid.unshift(new Array(COLS).fill(false));
       cleared++;
       r++;
     }
@@ -290,10 +357,10 @@ function clearLines() {
   if (cleared) {
     lines += cleared;
     while (lines >= nextSpecialAt) {
-      pendingSpecial = true;
+      if (!challenge) pendingSpecial = true; // sin especiales en desafíos
       nextSpecialAt += SPECIAL_EVERY;
     }
-    level = Math.floor(lines / 10) + 1;
+    level = (challenge?.startLevel ?? 1) + Math.floor(lines / 10);
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
     updateHUD();
   }
@@ -331,6 +398,7 @@ function lockPiece() {
   const cleared = clearLines();
   scoreClear(cleared, tspin);
   lastMoveRotate = false;
+  if (challenge?.lines && lines >= challenge.lines) { winChallenge(); return; }
   spawn();
 }
 
@@ -404,7 +472,7 @@ function draw() {
   // board
   for (let r = 0; r < ROWS; r++)
     for (let c = 0; c < COLS; c++)
-      drawBlock(ctx, c, r, board[r][c], BLOCK);
+      if (!hid[r][c]) drawBlock(ctx, c, r, board[r][c], BLOCK);
 
   // ghost
   const gy = ghostY();
@@ -459,6 +527,7 @@ function drawNext() {
 }
 
 function endGame() {
+  if (gameOver) return;
   gameOver = true;
   cancelAnimationFrame(animId);
   overlayTitle.textContent = 'GAME OVER';
@@ -485,6 +554,21 @@ function loop(ts) {
   lastTime = ts;
   popups.forEach(p => { p.life -= dt; });
   popups = popups.filter(p => p.life > 0);
+  if (challenge) {
+    elapsed += dt;
+    if (challenge.garbageEvery) {
+      garbageAccum += dt;
+      if (garbageAccum >= challenge.garbageEvery) { garbageAccum = 0; addGarbage(); }
+    }
+    if (!gameOver && challenge.timeLimit && elapsed >= challenge.timeLimit) {
+      endGame();
+      overlayTitle.textContent = '¡TIEMPO AGOTADO!';
+    } else if (!gameOver && challenge.surviveMs && elapsed >= challenge.surviveMs) {
+      winChallenge();
+    }
+    updateObjective();
+    if (gameOver) { draw(); return; }
+  }
   if (shake > 0) shake -= dt;
   if (flash > 0) flash -= dt;
   if (freezeLeft > 0) freezeLeft = Math.max(0, freezeLeft - dt);
@@ -516,13 +600,19 @@ function applyTheme(name) {
 }
 
 function init() {
+  const mode = modeSel.value;
+  challenge = mode === 'classic' ? null : CHALLENGES[Number(mode)];
+  elapsed = 0;
+  garbageAccum = 0;
   board = createBoard();
+  hid = createBoard().map(row => row.map(() => false));
+  if (challenge?.prefill) prefillBoard(challenge.prefill);
   score = 0;
   lines = 0;
-  level = 1;
+  level = challenge?.startLevel ?? 1;
   paused = false;
   gameOver = false;
-  dropInterval = 1000;
+  dropInterval = Math.max(100, 1000 - (level - 1) * 90);
   dropAccum = 0;
   pendingSpecial = false;
   nextSpecialAt = SPECIAL_EVERY;
@@ -537,6 +627,7 @@ function init() {
   next = randomPiece();
   spawn();
   updateHUD();
+  updateObjective();
   overlay.classList.add('hidden');
   cancelAnimationFrame(animId);
   animId = requestAnimationFrame(loop);
@@ -570,6 +661,7 @@ document.addEventListener('keydown', e => {
 });
 
 restartBtn.addEventListener('click', init);
+modeSel.addEventListener('change', () => { init(); modeSel.blur(); });
 themeBtn.addEventListener('click', () => {
   applyTheme(theme === 'dark' ? 'light' : 'dark');
   themeBtn.blur(); // evita que Espacio vuelva a activar el botón

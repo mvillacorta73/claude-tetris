@@ -9,6 +9,10 @@
 <body>
   <button id="theme-toggle" type="button" aria-pressed="false" aria-label="Cambiar a modo claro">☀️ Modo claro</button>
   <h1 class="game-title">TETRIS</h1>
+  <div class="mode-bar">
+    <label for="mode">Modo:</label>
+    <select id="mode"><option value="classic">Clásico</option></select>
+  </div>
   <div class="wrapper">
     <div class="game-container">
       <canvas id="board" width="300" height="600"></canvas>
@@ -30,6 +34,11 @@
         <div class="panel-section">
           <span class="label">COMBO</span>
           <span class="value" id="combo">—</span>
+        </div>
+
+        <div class="panel-section">
+          <span class="label">OBJETIVO</span>
+          <span class="objective" id="objective">Modo clásico</span>
         </div>
 
         <div class="panel-section">

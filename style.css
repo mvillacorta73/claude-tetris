@@ -232,3 +232,7 @@ kbd {
   0% { transform: scale(1.8); color: #ffd54f; }
   100% { transform: scale(1); }
 }
+
+.mode-bar { text-align: center; margin-bottom: 8px; }
+.mode-bar select { font: inherit; padding: 4px 8px; }
+.objective { white-space: pre-line; font-size: 0.8rem; max-width: 140px; line-height: 1.3; }
