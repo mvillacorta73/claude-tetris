@@ -530,18 +530,20 @@ const SKINS = {
     drawCell(context, px, py, size, color, alpha, ci) {
       const wild = ci === WILD;
       const paint = wild ? fillWild(context, px, py, size) : color;
+      const m = Math.max(1, size * 0.1);   // margen; escala con celdas pequeñas
+      const w = size - 2 * m;
       context.shadowColor = wild ? '#e040fb' : color;
       context.shadowBlur = size * 0.45;
       context.fillStyle = 'rgba(0,0,0,0.85)';
-      context.fillRect(px + 3, py + 3, size - 6, size - 6);
+      context.fillRect(px + m, py + m, w, w);
       context.strokeStyle = paint;
-      context.lineWidth = 2;
-      context.strokeRect(px + 3, py + 3, size - 6, size - 6);
+      context.lineWidth = Math.max(1, size / 15);
+      context.strokeRect(px + m, py + m, w, w);
       context.shadowBlur = 0;
       context.shadowColor = 'transparent';
       context.globalAlpha = alpha * 0.35;
       context.fillStyle = paint;
-      context.fillRect(px + 5, py + 5, size - 10, size - 10);
+      context.fillRect(px + 2 * m, py + 2 * m, size - 4 * m, size - 4 * m);
     },
   },
   pastel: {
@@ -554,8 +556,8 @@ const SKINS = {
       roundedRectPath(context, px + 1.5, py + 1.5, size - 3, size - 3, r);
       context.fillStyle = ci === WILD ? fillWild(context, px, py, size) : color;
       context.fill();
-      context.strokeStyle = 'rgba(255,255,255,0.7)';
-      context.lineWidth = 1.5;
+      context.strokeStyle = 'rgba(110,110,140,0.55)'; // visible también sobre fondo blanco
+      context.lineWidth = 1;
       context.stroke();
       context.fillStyle = 'rgba(255,255,255,0.35)';
       roundedRectPath(context, px + size * 0.2, py + size * 0.16, size * 0.6, size * 0.16, size * 0.08);
@@ -597,7 +599,7 @@ function skinGridColor() {
 }
 
 function applySkin(name, save = true) {
-  if (!SKINS[name]) name = 'retro';
+  if (!Object.hasOwn(SKINS, name)) name = 'retro';
   skin = name;
   skinSel.value = name;
   document.documentElement.dataset.skin = name;
@@ -606,13 +608,13 @@ function applySkin(name, save = true) {
   else document.documentElement.style.removeProperty('--skin-bg');
   gridColor = skinGridColor();
   if (save) { try { localStorage.setItem('tetris-skin', name); } catch (e) { /* sin almacenamiento */ } }
-  if (current) { draw(); drawNext(); drawHold(); drawPreview(); }
+  if (current) { draw(); drawNext(); drawHold(); }
 }
 
 function loadSkin() {
   let saved = null;
   try { saved = localStorage.getItem('tetris-skin'); } catch (e) { /* ignorar */ }
-  applySkin(SKINS[saved] ? saved : 'retro', false);
+  applySkin(saved, false);
 }
 
 function drawBlock(context, x, y, colorIndex, size, alpha) {
