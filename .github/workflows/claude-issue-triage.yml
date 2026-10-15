@@ -1,0 +1,65 @@
+name: Claude Issue Triage
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  triage:
+    if: github.event.issue.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # Un issue principal no tiene issue padre. La API devuelve 404 en ese caso.
+      - name: Detect sub-issue
+        id: parent
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/parent" >/dev/null 2>&1; then
+            echo "is_sub=true" >> "$GITHUB_OUTPUT"
+            echo "Issue #${{ github.event.issue.number }} es un sub-issue: se omite el triage."
+          else
+            echo "is_sub=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Triage issue with Claude
+        if: steps.parent.outputs.is_sub == 'false'
+        uses: anthropics/claude-code-action@v1
+        env:
+          GH_TOKEN: ${{ github.token }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          claude_args: >-
+            --allowedTools "Read,Glob,Grep,Bash(gh issue view:*),Bash(gh label list:*),Bash(gh issue edit:*),Bash(gh issue comment:*)"
+          prompt: |
+            REPO: ${{ github.repository }}
+            ISSUE: #${{ github.event.issue.number }}
+
+            Eres el encargado de hacer triage de issues de este repositorio (Tetris en JS vanilla; lee CLAUDE.md para la arquitectura).
+
+            1. Lee el issue: `gh issue view ${{ github.event.issue.number }} --json title,body,author`.
+            2. Obtén los labels disponibles: `gh label list --limit 100`.
+            3. Explora el código relevante (index.html, style.css, game.js) para entender el problema.
+            4. Elige SOLO labels de la lista existente (tipo: bug/enhancement/documentation/question, etc.).
+               Aplícalos con `gh issue edit ${{ github.event.issue.number }} --add-label "a,b"`. No crees labels nuevos.
+            5. Publica UN comentario en español con `gh issue comment ${{ github.event.issue.number }} --body "..."` con esta estructura:
+               ## 🔍 Diagnóstico automático
+               **Resumen:** qué se pide / qué falla, en 1-3 frases.
+               **Tipo:** bug / mejora / pregunta / otro.
+               **Causa probable / Análisis:** razonamiento basado en el código.
+               **Archivos y funciones afectados:** p.ej. `game.js` → `tryRotate()`, `clearLines()` (con líneas si aplica).
+               **Enfoque de solución sugerido:** pasos concretos, sin escribir el código completo.
+               **Riesgos / consideraciones:** p.ej. acoplamiento tamaño canvas ↔ constantes, alineación PIECES/COLORS.
+               **Información faltante:** preguntas para el autor si el issue es ambiguo.
+               **Labels asignados:** lista.
+            No modifiques archivos del repo, no abras PRs ni cierres el issue.
