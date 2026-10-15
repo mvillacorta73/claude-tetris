@@ -14,7 +14,23 @@ const COLORS = [
   '#90caf9', // J - pale blue
   '#ffb74d', // L - orange
   '#b0bec5', // N - tuerca (gris metálico)
+  '#ffffff', // 9 - comodín (se pinta con degradado arcoíris)
+  '#ff7043', // 10 - bomba
+  '#fff176', // 11 - rayo
+  '#f06292', // 12 - tinte
+  '#9575cd', // 13 - gravedad
+  '#4fc3f7', // 14 - congelar
 ];
+
+// Piezas especiales: bloque 1×1 cuyo índice (10–14) es también su tipo
+const WILD = 9;
+const SPECIAL = { BOMB: 10, RAY: 11, TINT: 12, GRAVITY: 13, FREEZE: 14 };
+const SPECIAL_ICONS = { 10: '💣', 11: '⚡', 12: '🎨', 13: '🌀', 14: '❄️' };
+const SPECIAL_NAMES = { 10: '¡BOMBA!', 11: '¡RAYO!', 12: '¡TINTE!', 13: '¡GRAVEDAD!', 14: '¡CONGELAR!' };
+const SPECIAL_EVERY = 5;   // líneas entre piezas especiales
+const FREEZE_MS = 5000;
+const WILD_BONUS = 50;     // puntos extra por comodín en una línea limpiada
+const EFFECT_MSG_MS = 1200;
 
 const PIECES = [
   null,
@@ -47,9 +63,59 @@ let theme = 'dark';
 let gridColor = '#22222e';
 
 let board, current, next, score, lines, level, paused, gameOver, lastTime, dropAccum, dropInterval, animId;
+let pendingSpecial, nextSpecialAt, freezeLeft, effectMsg, effectMsgLeft;
 
 function createBoard() {
   return Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+}
+
+function randomSpecial() {
+  const type = SPECIAL.BOMB + Math.floor(Math.random() * 5);
+  return { type, shape: [[type]], x: Math.floor(COLS / 2), y: 0, special: true };
+}
+
+function applySpecial() {
+  const r = current.y, c = current.x, type = current.type;
+  let destroyed = 0;
+  const clearCell = (y, x) => {
+    if (y < 0 || y >= ROWS || x < 0 || x >= COLS || !board[y][x]) return;
+    board[y][x] = 0;
+    destroyed++;
+  };
+
+  if (type === SPECIAL.BOMB) {
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) clearCell(r + dy, c + dx);
+  } else if (type === SPECIAL.RAY) {
+    for (let x = 0; x < COLS; x++) clearCell(r, x);
+    for (let y = 0; y < ROWS; y++) clearCell(y, c);
+  } else if (type === SPECIAL.TINT) {
+    let target = r + 1 < ROWS ? board[r + 1][c] : 0;
+    if (target < 1 || target > 8) {
+      const counts = new Array(9).fill(0);
+      for (const row of board) for (const v of row) if (v >= 1 && v <= 8) counts[v]++;
+      const max = Math.max(...counts);
+      target = max > 0 ? counts.indexOf(max) : 0;
+    }
+    if (target) {
+      for (let y = 0; y < ROWS; y++)
+        for (let x = 0; x < COLS; x++)
+          if (board[y][x] === target) board[y][x] = WILD;
+    }
+  } else if (type === SPECIAL.GRAVITY) {
+    for (let x = 0; x < COLS; x++) {
+      const col = [];
+      for (let y = 0; y < ROWS; y++) if (board[y][x]) col.push(board[y][x]);
+      for (let y = ROWS - 1; y >= 0; y--) board[y][x] = col.length ? col.pop() : 0;
+    }
+  } else if (type === SPECIAL.FREEZE) {
+    freezeLeft = FREEZE_MS;
+  }
+
+  score += destroyed * 10 * level;
+  effectMsg = SPECIAL_NAMES[type];
+  effectMsgLeft = EFFECT_MSG_MS;
+  updateHUD();
 }
 
 function randomPiece() {
@@ -103,6 +169,8 @@ function clearLines() {
   let cleared = 0;
   for (let r = ROWS - 1; r >= 0; r--) {
     if (board[r].every(v => v !== 0)) {
+      const wilds = board[r].filter(v => v === WILD).length;
+      score += wilds * WILD_BONUS * level;
       board.splice(r, 1);
       board.unshift(new Array(COLS).fill(0));
       cleared++;
@@ -111,6 +179,10 @@ function clearLines() {
   }
   if (cleared) {
     lines += cleared;
+    while (lines >= nextSpecialAt) {
+      pendingSpecial = true;
+      nextSpecialAt += SPECIAL_EVERY;
+    }
     score += (LINE_SCORES[cleared] || 0) * level;
     level = Math.floor(lines / 10) + 1;
     dropInterval = Math.max(100, 1000 - (level - 1) * 90);
@@ -142,14 +214,16 @@ function softDrop() {
 }
 
 function lockPiece() {
-  merge();
+  if (current.special) applySpecial();
+  else merge();
   clearLines();
   spawn();
 }
 
 function spawn() {
   current = next;
-  next = randomPiece();
+  next = pendingSpecial ? randomSpecial() : randomPiece();
+  pendingSpecial = false;
   if (collide(current.shape, current.x, current.y)) {
     endGame();
   }
@@ -166,11 +240,24 @@ function drawBlock(context, x, y, colorIndex, size, alpha) {
   if (!colorIndex) return;
   const color = COLORS[colorIndex];
   context.globalAlpha = alpha ?? 1;
-  context.fillStyle = color;
+  if (colorIndex === WILD) {
+    const g = context.createLinearGradient(x * size, y * size, (x + 1) * size, (y + 1) * size);
+    ['#ff5252', '#ffd740', '#69f0ae', '#40c4ff', '#e040fb'].forEach((c, i, a) => g.addColorStop(i / (a.length - 1), c));
+    context.fillStyle = g;
+  } else {
+    context.fillStyle = color;
+  }
   context.fillRect(x * size + 1, y * size + 1, size - 2, size - 2);
   // highlight
   context.fillStyle = 'rgba(255,255,255,0.12)';
   context.fillRect(x * size + 1, y * size + 1, size - 2, 4);
+  if (SPECIAL_ICONS[colorIndex]) {
+    context.font = `${Math.floor(size * 0.65)}px sans-serif`;
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+    context.fillStyle = '#000';
+    context.fillText(SPECIAL_ICONS[colorIndex], x * size + size / 2, y * size + size / 2 + 1);
+  }
   context.globalAlpha = 1;
 }
 
@@ -211,6 +298,28 @@ function draw() {
   for (let r = 0; r < current.shape.length; r++)
     for (let c = 0; c < current.shape[r].length; c++)
       drawBlock(ctx, current.x + c, current.y + r, current.shape[r][c], BLOCK);
+
+  // overlays de efectos
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (freezeLeft > 0) {
+    ctx.fillStyle = 'rgba(79,195,247,0.18)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#4fc3f7';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.fillText(`❄ ${(freezeLeft / 1000).toFixed(1)}s`, canvas.width / 2, 18);
+  }
+  if (effectMsgLeft > 0) {
+    ctx.globalAlpha = Math.min(1, effectMsgLeft / 400);
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 4;
+    ctx.font = 'bold 32px sans-serif';
+    ctx.strokeText(effectMsg, canvas.width / 2, canvas.height / 2);
+    ctx.fillText(effectMsg, canvas.width / 2, canvas.height / 2);
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 0.5;
+  }
 }
 
 function drawNext() {
@@ -249,7 +358,9 @@ function togglePause() {
 function loop(ts) {
   const dt = ts - lastTime;
   lastTime = ts;
-  dropAccum += dt;
+  if (effectMsgLeft > 0) effectMsgLeft -= dt;
+  if (freezeLeft > 0) freezeLeft = Math.max(0, freezeLeft - dt);
+  else dropAccum += dt; // congelado: la gravedad no avanza
   if (dropAccum >= dropInterval) {
     dropAccum = 0;
     if (!collide(current.shape, current.x, current.y + 1)) {
@@ -284,6 +395,11 @@ function init() {
   gameOver = false;
   dropInterval = 1000;
   dropAccum = 0;
+  pendingSpecial = false;
+  nextSpecialAt = SPECIAL_EVERY;
+  freezeLeft = 0;
+  effectMsg = '';
+  effectMsgLeft = 0;
   lastTime = performance.now();
   next = randomPiece();
   spawn();
