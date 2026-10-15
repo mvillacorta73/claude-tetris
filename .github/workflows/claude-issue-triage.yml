@@ -52,7 +52,12 @@ jobs:
             3. Explora el código relevante (index.html, style.css, game.js) para entender el problema.
             4. Elige SOLO labels de la lista existente (tipo: bug/enhancement/documentation/question, etc.).
                Aplícalos con `gh issue edit ${{ github.event.issue.number }} --add-label "a,b"`. No crees labels nuevos.
-            5. Publica UN comentario en español con `gh issue comment ${{ github.event.issue.number }} --body "..."` con esta estructura:
+            5. Publica UN comentario en español con `gh issue comment ${{ github.event.issue.number }} --body "..."`.
+               El comentario DEBE estar escrito en formato Markdown compatible con GitHub (GitHub Flavored Markdown):
+               usa encabezados `##`, **negritas**, listas con `-` o `1.`, `código inline` y bloques de código con triple
+               backtick (indicando el lenguaje, p.ej. ```js), y saltos de línea reales (no secuencias literales `\n`).
+               Para evitar problemas de escape con el shell, pasa el cuerpo con `--body-file` o un heredoc en lugar de comillas.
+               Estructura del comentario:
                ## 🔍 Diagnóstico automático
                **Resumen:** qué se pide / qué falla, en 1-3 frases.
                **Tipo:** bug / mejora / pregunta / otro.
